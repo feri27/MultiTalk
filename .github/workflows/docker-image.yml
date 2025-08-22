@@ -56,16 +56,45 @@ jobs:
 
     - name: Free up disk space
       run: |
-        # Remove unnecessary packages to free up space
-        sudo apt-get remove -y '^dotnet-.*' '^llvm-.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk hhvm google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri
-        sudo apt-get autoremove -y
-        sudo apt-get clean
+        # Show space before cleanup
+        echo "=== Disk space before cleanup ==="
+        df -h
         
-        # Remove large directories
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo rm -rf /imagegeneration /opt/az /opt/microsoft
+        # Remove packages safely (ignore if not found)
+        echo "=== Removing unnecessary packages ==="
+        sudo apt-get remove -y --purge $(dpkg-query -Wf '${Package}\n' | grep -E '^(dotnet-|llvm-|mongodb-|mysql-|azure-cli|google-cloud-sdk|hhvm|google-chrome-stable|firefox|powershell|mono-devel)' | head -20) || true
         
-        # Show available space
+        # Clean package cache
+        sudo apt-get autoremove -y || true
+        sudo apt-get clean || true
+        sudo apt-get autoclean || true
+        
+        # Remove large directories safely
+        echo "=== Removing large directories ==="
+        sudo rm -rf /usr/share/dotnet || true
+        sudo rm -rf /usr/local/lib/android || true
+        sudo rm -rf /opt/ghc || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /imagegeneration || true
+        sudo rm -rf /opt/az || true
+        sudo rm -rf /opt/microsoft || true
+        sudo rm -rf /usr/local/.ghcup || true
+        sudo rm -rf /usr/local/share/boost || true
+        sudo rm -rf /usr/local/graalvm || true
+        sudo rm -rf /usr/local/share/vcpkg || true
+        sudo rm -rf /usr/local/share/chromium || true
+        sudo rm -rf /opt/mssql-tools || true
+        sudo rm -rf /etc/skel/.dotnet || true
+        
+        # Clean Docker system
+        docker system prune -af --volumes || true
+        
+        # Clean apt cache
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo rm -rf /var/cache/apt/archives/*
+        
+        # Show space after cleanup
+        echo "=== Disk space after cleanup ==="
         df -h
 
     - name: Build Docker image
