@@ -1,6 +1,8 @@
 # Alternative Dockerfile without Conda - Using Python virtual environment
 #FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
-FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn8-runtime
+#FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn8-runtime
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+
 
 
 # Set environment variables
