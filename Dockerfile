@@ -1,5 +1,7 @@
 # Alternative Dockerfile without Conda - Using Python virtual environment
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+#FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn8-runtime
+
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -41,11 +43,11 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 WORKDIR /app
 
 # Install PyTorch and related packages first (most time-consuming)
-RUN pip install --no-cache-dir \
-    torch==2.4.1 \
-    torchvision==0.19.1 \
-    torchaudio==2.4.1 \
-    --index-url https://download.pytorch.org/whl/cu121
+#RUN pip install --no-cache-dir \
+#    torch==2.4.1 \
+#    torchvision==0.19.1 \
+#    torchaudio==2.4.1 \
+#    --index-url https://download.pytorch.org/whl/cu121
 
 # Install xformers
 RUN pip install --no-cache-dir -U xformers==0.0.28 --index-url https://download.pytorch.org/whl/cu121
