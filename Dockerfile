@@ -1,4 +1,4 @@
-# Use NVIDIA CUDA base image with CUDNN for PyTorch CUDA 12.1 support
+# Alternative Dockerfile without Conda - Using Python virtual environment
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 # Set environment variables
@@ -8,8 +8,15 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# Install system dependencies
+# Install system dependencies including Python 3.10
 RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-venv \
+    python3.10-dev \
+    python3-pip \
     wget \
     git \
     curl \
@@ -19,61 +26,88 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     libsndfile1-dev \
     pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Install Miniconda
-RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh
+# Create Python virtual environment
+RUN python3.10 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Add conda to path
-ENV PATH=/opt/conda/bin:$PATH
-
-# Create conda environment with Python 3.10
-RUN conda create -n multitalk python=3.10 -y
-
-# Make RUN commands use the new environment
-SHELL ["conda", "run", "-n", "multitalk", "/bin/bash", "-c"]
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Set working directory
 WORKDIR /app
 
-# Clone the repository
-RUN git clone https://github.com/MeiGen-AI/MultiTalk.git . || \
-    (echo "Repository cloning failed, continuing with manual setup..." && mkdir -p /app)
-
-# Install PyTorch, torchvision, torchaudio with CUDA 12.1 support
-RUN pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch and related packages first (most time-consuming)
+RUN pip install --no-cache-dir \
+    torch==2.4.1 \
+    torchvision==0.19.1 \
+    torchaudio==2.4.1 \
+    --index-url https://download.pytorch.org/whl/cu121
 
 # Install xformers
-RUN pip install -U xformers==0.0.28 --index-url https://download.pytorch.org/whl/cu121
+RUN pip install --no-cache-dir -U xformers==0.0.28 --index-url https://download.pytorch.org/whl/cu121
 
 # Install flash-attn dependencies
-RUN pip install misaki[en] ninja psutil packaging
+RUN pip install --no-cache-dir misaki[en] ninja psutil packaging
 
-# Install flash-attn (this may take some time to compile)
-RUN pip install flash-attn==2.7.4.post1 --no-build-isolation
+# Install flash-attn with limited parallelism for GitHub Actions
+RUN MAX_JOBS=2 pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
 
-# Install huggingface-hub for model downloads
-RUN pip install huggingface-hub
+# Install essential ML/Audio libraries
+RUN pip install --no-cache-dir \
+    huggingface-hub \
+    transformers \
+    librosa \
+    soundfile \
+    scipy \
+    numpy \
+    gradio \
+    accelerate
 
-# Copy requirements.txt if it exists, otherwise create a minimal one
+# Copy requirements.txt and install additional dependencies if exists
 COPY requirements.txt* ./
-RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo "No requirements.txt found, skipping..."; fi
-
-# Install librosa via conda
-RUN conda install -c conda-forge librosa -y
+RUN if [ -f requirements.txt ]; then \
+        pip install --no-cache-dir -r requirements.txt; \
+    else \
+        echo "No requirements.txt found, skipping additional dependencies..."; \
+    fi
 
 # Create weights directory
 RUN mkdir -p ./weights
 
-# Download HuggingFace models
+# Set HF_HOME to avoid permission issues
+ENV HF_HOME=/tmp/huggingface
+
+# Download HuggingFace models with better error handling and retries
 RUN echo "Downloading models..." && \
-    huggingface-cli download Wan-AI/Wan2.1-I2V-14B-480P --local-dir ./weights/Wan2.1-I2V-14B-480P && \
-    huggingface-cli download TencentGameMate/chinese-wav2vec2-base --local-dir ./weights/chinese-wav2vec2-base && \
-    huggingface-cli download TencentGameMate/chinese-wav2vec2-base model.safetensors --revision refs/pr/1 --local-dir ./weights/chinese-wav2vec2-base && \
-    huggingface-cli download hexgrad/Kokoro-82M --local-dir ./weights/Kokoro-82M && \
-    huggingface-cli download MeiGen-AI/MeiGen-MultiTalk --local-dir ./weights/MeiGen-MultiTalk
+    for model in \
+        "Wan-AI/Wan2.1-I2V-14B-480P" \
+        "TencentGameMate/chinese-wav2vec2-base" \
+        "hexgrad/Kokoro-82M" \
+        "MeiGen-AI/MeiGen-MultiTalk"; do \
+        echo "Downloading $model..."; \
+        for attempt in 1 2 3; do \
+            if huggingface-cli download "$model" --local-dir "./weights/$(basename "$model")" --resume-download; then \
+                echo "Successfully downloaded $model"; \
+                break; \
+            else \
+                echo "Download attempt $attempt failed for $model, retrying in 10s..."; \
+                sleep 10; \
+            fi; \
+            if [ $attempt -eq 3 ]; then \
+                echo "Failed to download $model after 3 attempts"; \
+                exit 1; \
+            fi; \
+        done; \
+    done
+
+# Download specific file with revision
+RUN huggingface-cli download TencentGameMate/chinese-wav2vec2-base model.safetensors \
+    --revision refs/pr/1 --local-dir ./weights/chinese-wav2vec2-base || \
+    echo "Warning: Failed to download model.safetensors with revision, continuing..."
 
 # Copy and setup model files
 RUN if [ -f "weights/Wan2.1-I2V-14B-480P/diffusion_pytorch_model.safetensors.index.json" ]; then \
@@ -89,18 +123,20 @@ RUN if [ -f "weights/Wan2.1-I2V-14B-480P/diffusion_pytorch_model.safetensors.ind
            weights/Wan2.1-I2V-14B-480P/; \
     fi
 
-# Copy application code (if not already cloned)
+# Copy application code
 COPY . .
 
-# Expose port (assuming Gradio default port 7860)
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app
+USER app
+
+# Expose port
 EXPOSE 7860
 
-# Set the conda environment as default
-ENV CONDA_DEFAULT_ENV=multitalk
-ENV CONDA_PREFIX=/opt/conda/envs/multitalk
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:7860/health || exit 1
 
-# Update PATH to use the conda environment
-ENV PATH=/opt/conda/envs/multitalk/bin:$PATH
-
-# Default command to run the application
+# Default command
 CMD ["python", "app.py", "--num_persistent_param_in_dit", "0"]
