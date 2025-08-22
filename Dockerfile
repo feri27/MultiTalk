@@ -81,33 +81,13 @@ RUN mkdir -p ./weights
 # Set HF_HOME to avoid permission issues
 ENV HF_HOME=/tmp/huggingface
 
-# Download HuggingFace models with better error handling and retries
-RUN echo "Downloading models..." && \
-    for model in \
-        "Wan-AI/Wan2.1-I2V-14B-480P" \
-        "TencentGameMate/chinese-wav2vec2-base" \
-        "hexgrad/Kokoro-82M" \
-        "MeiGen-AI/MeiGen-MultiTalk"; do \
-        echo "Downloading $model..."; \
-        for attempt in 1 2 3; do \
-            if huggingface-cli download "$model" --local-dir "./weights/$(basename "$model")" --resume-download; then \
-                echo "Successfully downloaded $model"; \
-                break; \
-            else \
-                echo "Download attempt $attempt failed for $model, retrying in 10s..."; \
-                sleep 10; \
-            fi; \
-            if [ $attempt -eq 3 ]; then \
-                echo "Failed to download $model after 3 attempts"; \
-                exit 1; \
-            fi; \
-        done; \
-    done
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Download specific file with revision
-RUN huggingface-cli download TencentGameMate/chinese-wav2vec2-base model.safetensors \
-    --revision refs/pr/1 --local-dir ./weights/chinese-wav2vec2-base || \
-    echo "Warning: Failed to download model.safetensors with revision, continuing..."
+# Hapus bagian RUN huggingface-cli download ...
+# Ganti CMD
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Copy and setup model files
 RUN if [ -f "weights/Wan2.1-I2V-14B-480P/diffusion_pytorch_model.safetensors.index.json" ]; then \
