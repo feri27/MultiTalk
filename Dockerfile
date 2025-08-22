@@ -1,7 +1,7 @@
 # Alternative Dockerfile without Conda - Using Python virtual environment
 #FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 #FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn8-runtime
-FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-devel
 
 
 
@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y \
 RUN python3.10 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+RUN apt-get update && apt-get install -y build-essential git
+
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
@@ -57,8 +59,11 @@ RUN pip install --no-cache-dir -U xformers==0.0.28 --index-url https://download.
 # Install flash-attn dependencies
 RUN pip install --no-cache-dir misaki[en] ninja psutil packaging
 
+RUN pip install flash-attn==2.7.4.post1
+
+
 # Install flash-attn with limited parallelism for GitHub Actions
-RUN MAX_JOBS=2 pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
+#RUN MAX_JOBS=2 pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
 
 # Install essential ML/Audio libraries
 RUN pip install --no-cache-dir \
