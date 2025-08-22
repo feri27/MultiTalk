@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  multitalk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: multitalk:latest
+    container_name: multitalk-app
+    
+    # GPU access configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Port mapping (Gradio default port)
+    ports:
+      - "7860:7860"
+    
+    # Volume mounts for persistent data
+    volumes:
+      - ./weights:/app/weights:cached
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Resource limits (adjust based on your system)
+    mem_limit: 16g
+    shm_size: 8g
+    
+    # Additional runtime options
+    stdin_open: true
+    tty: true
+    
+    # Override default command if needed
+    # command: ["python", "app.py", "--lora_dir", "weights/Wan2.1_I2V_14B_FusionX_LoRA.safetensors", "--lora_scale", "1.0", "--num_persistent_param_in_dit", "0", "--sample_shift", "2"]
+    
+    # Alternative quantized mode command
+    # command: ["python", "app.py", "--quant", "int8", "--quant_dir", "weights/MeiGen-MultiTalk", "--lora_dir", "weights/MeiGen-MultiTalk/quant_models/quant_model_int8_FusionX.safetensors", "--sample_shift", "2", "--num_persistent_param_in_dit", "0"]
+
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  weights:
+    driver: local
+  outputs:
+    driver: local
+  logs:
+    driver: local
